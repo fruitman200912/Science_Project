@@ -114,8 +114,8 @@ async function loadSpecies() {
 
   geojsonLayer = L.geoJSON(worldData, {
     style: feature => {
-      const rawName = feature
-      const countryName = feature.properties.ADMIN;
+      const rawName = feature.properties.ADMIN;
+      const countryName = countryNameMap[rawName] || rawName;
       const count = countryCounts[countryName];
       return {
         fillColor: count ? getColor(count) : "#eee",
@@ -126,7 +126,8 @@ async function loadSpecies() {
     },
 
     onEachFeature: function (feature, layer) {
-      const countryName = feature.properties.ADMIN;
+      const rawName = feature.properties.ADMIN;
+      const countryName = countryNameMap[rawName] || rawName;
       const count = countryCounts[countryName];
 
       layer.bindTooltip(count ? `${countryName}: ${count}건 관측` : `${countryName}: 관측 없음`,
