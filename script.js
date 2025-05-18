@@ -38,6 +38,29 @@ const countryNameMap = {
   // 필요시 계속 추가
 };
 
+<<<<<<< HEAD
+=======
+async function getPlaceIdByCountryName(name) {
+  if (placeIdCache[name]) return placeIdCache[name];
+
+  const res = await axios.get(`https://api.inaturalist.org/v1/places/autocomplete?q=${encodeURIComponent(name)}&per_page=10`);
+  const match = res.data.results.find(p => {
+    const display = (p.display_name || "").toLowerCase();
+    const short = (p.name || "").toLowerCase();
+    const target = name.toLowerCase();
+    return display.includes(target) || short.includes(target);
+  });
+
+  if (match) {
+    placeIdCache[name] = match.id;
+    return match.id;
+  }
+
+  console.warn(`국가 매핑 실패: ${name}`);
+  return null;
+}
+
+>>>>>>> ac7e3dd (커밋)
 async function loadSpecies() {
   const input = document.getElementById('Search').value.trim();
   if (!input) return;
@@ -48,16 +71,24 @@ async function loadSpecies() {
   if (!first) return alert("해당 종을 찾을 수 없습니다.");
   const taxonId = first.id;
 
+<<<<<<< HEAD
   const placeList = await axios.get(`https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeUTIComponent(input)}`)
     .then(res => res.data.results);
 
   const worldData = await fetch("https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson")
     .then(r => r.json());
+=======
+  const worldData = await fetch("https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson")
+    .then(r => r.json());
+
+  console.log("샘플 국가 속성:", worldData.features[0].properties);
+>>>>>>> ac7e3dd (커밋)
 
   const features = worldData.features;
   const placeIdMap = {};
 
   for (const feature of features) {
+<<<<<<< HEAD
     const rawName = feature.properties.ADMIN;
     const iNatName = countryNameMap[rawName] || rawName;
     const match = placeList.find(p =>
@@ -69,12 +100,27 @@ async function loadSpecies() {
       placeIdMap[rawName] = match.id;
     } else {
       console.warn(`매핑 실패: ${rawName} -> ${iNatName}`);
+=======
+    const rawName = feature.properties.ADMIN || feature.properties.name || feature.properties.NAME_LONG;
+    const iNatName = countryNameMap[rawName] || rawName;
+    if (!iNatName) {
+      console.warn(`iNatName이 undefined입니다: ${rawName}`);
+      continue;
+    }
+    const placeId = await getPlaceIdByCountryName(iNatName);
+    if (placeId) {
+      placeIdMap[rawName] = placeId;
+>>>>>>> ac7e3dd (커밋)
     }
   }
 
   const observationPromises = Object.entries(placeIdMap).map(async ([country, placeId]) => {
     const res = await axios.get(
+<<<<<<< HEAD
       `https://api.inaturalist.org/v1/observations?taxon_id=${taxonId}$place_id=${placeId}&verifiable=true&per_page=1`
+=======
+      `https://api.inaturalist.org/v1/observations?taxon_id=${taxonId}&place_id=${placeId}&verifiable=true&per_page=1`
+>>>>>>> ac7e3dd (커밋)
     );
     const count = res.data.total_results;
     return { country, count };
@@ -109,8 +155,14 @@ async function loadSpecies() {
         weight: 1
       };
     },
+<<<<<<< HEAD
     onEachFeature: function (feature, layer) {
       const rawName = feature.properties.ADMIN;
+=======
+    onEachFeature: (feature, layer) => {
+      const rawName = feature.properties.ADMIN;
+      const countryName = countryNameMap[rawName] || rawName;
+>>>>>>> ac7e3dd (커밋)
       const count = countryCounts[rawName];
 
       layer.bindTooltip(count ? `${countryName}: ${count}건 관측` : `${countryName}: 관측 없음`, {
