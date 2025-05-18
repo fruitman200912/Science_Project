@@ -18,7 +18,6 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let geojsonLayer = null;
-let placeIdCache = {};
 let countryCounts = {};
 let getColor = count => '#ccc';
 
@@ -36,71 +35,58 @@ const countryNameMap = {
   "Bolivia (Plurinational State of)": "Bolivia",
   "United Republic of Tanzania": "Tanzania",
   "Brunei Darussalam": "Brunei"
-  // 필요시 계속 추가 가능
+  // 필요시 계속 추가
 };
-
-async function getPlaceIdByCountryName(countryName) {
-  if (placeIdCache[countryName]) return placeIdCache[countryName];
-
-  const res = await axios.get(`https://api.inaturalist.org/v1/places/autocomplete?q=${encodeURIComponent(countryName)}`);
-  const match = res.data.results.find(p =>
-    (p.admin_level === 0 || p.admin_level === null) &&
-    p.display_name.toLowerCase().includes(countryName.toLowerCase())
-  );
-
-  if (match) {
-    placeIdCache[countryName] = match.id;
-    return match.id;
-  }
-  return null;
-}
 
 async function loadSpecies() {
   const input = document.getElementById('Search').value.trim();
   if (!input) return;
-
   console.clear();
-  console.log("검색어:", input);
 
-  //자동완성
   const autoResp = await axios.get(`https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(input)}`);
-  console.log("자동완성 결과:", autoResp.data.results);
-  if (!autoResp.data.results.length) return alert("해당 종을 찾을 수 없습니다.");
-  const taxonName = autoResp.data.results[0].name;
-  console.log("검색된 종 이름:", taxonName);
+  const first = autoResp.data.results[0];
+  if (!first) return alert("해당 종을 찾을 수 없습니다.");
+  const taxonId = first.id;
 
-  const worldData = await fetch("https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson").then(r => r.json());
+  const placeList = await axios.get(`https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeUTIComponent(input)}`)
+    .then(res => res.data.results);
+
+  const worldData = await fetch("https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson")
+    .then(r => r.json());
 
   const features = worldData.features;
   const placeIdMap = {};
 
-  await Promise.all(features.map(async (feature) => {
-    const country = feature.properties.ADMIN;
-    const placeId = await getPlaceIdByCountryName(country);
-    if (placeId) {
-      placeIdMap[country] = placeId;
-    }
-  }));
+  for (const feature of features) {
+    const rawName = feature.properties.ADMIN;
+    const iNatName = countryNameMap[rawName] || rawName;
+    const match = placeList.find(p =>
+      p.display_name.toLowerCase() === iNatName.toLowerCase() ||
+      p.name.toLowerCase() === iNatName.toLowerCase()
+    );
 
-  console.log("매핑된 국가 수:", Object.keys(placeIdMap).length);
+    if (match) {
+      placeIdMap[rawName] = match.id;
+    } else {
+      console.warn(`매핑 실패: ${rawName} -> ${iNatName}`);
+    }
+  }
 
   const observationPromises = Object.entries(placeIdMap).map(async ([country, placeId]) => {
-    const obsResp = await axios.get(`https://api.inaturalist.org/v1/observations?taxon_name=${taxonName}&verifiable=true&place_id=${placeId}&per_page=1`);
-    const count = obsResp.data.total_results || 0;
-    console.log(`${country} (${placeId}): ${count}`)
+    const res = await axios.get(
+      `https://api.inaturalist.org/v1/observations?taxon_id=${taxonId}$place_id=${placeId}&verifiable=true&per_page=1`
+    );
+    const count = res.data.total_results;
     return { country, count };
   });
 
-  const observationResults = await Promise.all(observationPromises)
+  const observationResults = await Promise.all(observationPromises);
   countryCounts = {};
   for (let { country, count } of observationResults) {
     countryCounts[country] = count;
   }
 
-  console.log("관측 결과 수:", countryCounts);
-
   const maxCount = Math.max(...Object.values(countryCounts), 1);
-
   getColor = function (count) {
     const step = maxCount / 5;
     return count > step * 4 ? '#084081' :
@@ -115,8 +101,7 @@ async function loadSpecies() {
   geojsonLayer = L.geoJSON(worldData, {
     style: feature => {
       const rawName = feature.properties.ADMIN;
-      const countryName = countryNameMap[rawName] || rawName;
-      const count = countryCounts[countryName];
+      const count = countryCounts[rawName];
       return {
         fillColor: count ? getColor(count) : "#eee",
         fillOpacity: count ? 0.8 : 0.3,
@@ -124,30 +109,22 @@ async function loadSpecies() {
         weight: 1
       };
     },
-
     onEachFeature: function (feature, layer) {
       const rawName = feature.properties.ADMIN;
-      const countryName = countryNameMap[rawName] || rawName;
-      const count = countryCounts[countryName];
+      const count = countryCounts[rawName];
 
-      layer.bindTooltip(count ? `${countryName}: ${count}건 관측` : `${countryName}: 관측 없음`,
-        { sticky: true }
-      );
+      layer.bindTooltip(count ? `${countryName}: ${count}건 관측` : `${countryName}: 관측 없음`, {
+        sticky: true
+      });
 
       layer.on({
-        mouseover: function (e) {
-          const layer = e.target;
-          layer.setStyle({
-            fillOpacity: 0.9,
-            weight: 2,
-            color: 'black'
-          });
-          layer.openTooltip();
+        mouseover: e => {
+          const l = e.target;
+          l.setStyle({ fillOpacity: 0.9, weight: 2, color: 'black' });
+          l.openTooltip();
         },
-        mouseout: function (e) {
-          if (geojsonLayer && geojsonLayer.resetStyle) {
-            geojsonLayer.resetStyle(e.target);
-          }
+        mouseout: e => {
+          geojsonLayer.resetStyle(e.target);
           e.target.closeTooltip();
         }
       });
